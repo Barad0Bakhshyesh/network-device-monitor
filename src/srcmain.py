@@ -1,31 +1,72 @@
+import csv
 import platform
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
-# مسیر فایل targets.txt نسبت به محل همین فایل پایتون
-project_folder = Path(__file__).parent
+# فولدری که فایل srcmain.py داخلش است
+project_folder = Path(__file__).resolve().parent.parent
+# مسیر فایل ورودی:
+# network-device-monitor/data/targets.txt
 targets_file = project_folder / "data" / "targets.txt"
 
-if not targets_file.exists():
-    print("File not found:", targets_file)
-    print("Please create data/targets.txt and add one host per line.")
+# مسیر فایل خروجی:
+# network-device-monitor/reports/ping_report.csv
+reports_folder = project_folder / "reports"
+report_file = reports_folder / "ping_report.csv"
+
+print(f"Looking for targets here: {targets_file}")
+
+if not targets_file.is_file():
+    print("\nERROR: targets.txt was not found.")
+    print("Your files must be arranged like this:")
+    print("network-device-monitor/")
+    print("├── srcmain.py")
+    print("└── data/")
+    print("    └── targets.txt")
     raise SystemExit(1)
 
-for target in targets_file.read_text(encoding="utf-8").splitlines():
+# اگر reports وجود ندارد، خودش آن را می‌سازد
+reports_folder.mkdir(exist_ok=True)
+
+# خواندن آدرس‌ها از data/targets.txt
+targets = targets_file.read_text(encoding="utf-8").splitlines()
+
+results = []
+
+for target in targets:
     target = target.strip()
 
-    # رد کردن خط‌های خالی
+    # خط خالی را نادیده می‌گیرد
     if not target:
         continue
 
-    # در ویندوز -n و در macOS/Linux از -c استفاده می‌شود
-    count_flag = "-n" if platform.system().lower() == "windows" else "-c"
+    # -n برای ویندوز، -c برای Linux/macOS
+    ping_count = "-n" if platform.system() == "Windows" else "-c"
 
-    result = subprocess.run(
-        ["ping", count_flag, "1", target],
+    ping_result = subprocess.run(
+        ["ping", ping_count, "1", target],
         capture_output=True,
         text=True
     )
 
-    status = "ONLINE" if result.returncode == 0 else "OFFLINE"
+    status = "ONLINE" if ping_result.returncode == 0 else "OFFLINE"
+
     print(f"{target}: {status}")
+
+    results.append({
+        "host": target,
+        "status": status,
+        "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+# ذخیره گزارش CSV
+with report_file.open("w", newline="", encoding="utf-8") as csv_file:
+    writer = csv.DictWriter(
+        csv_file,
+        fieldnames=["host", "status", "checked_at"]
+    )
+    writer.writeheader()
+    writer.writerows(results)
+
+print(f"\nCSV report created: {report_file}")
